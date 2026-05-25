@@ -1,0 +1,70 @@
+INSTRUCCIONES DE USO DEL REPOSITORIO LAB
+=========================================
+
+Repositorio en GitHub: https://github.com/rafasalas/LAB
+Carpeta local:         i:\Mi unidad\trabajo rafa\Toy\Processing\LAB
+
+
+ESTRUCTURA
+----------
+LAB/
+  thelab/                        Reproductor y emisor OSC (TheLab)
+  visualizadores/
+    wild_diamond/                Enjambre de partículas
+    cristal1/                    Geoda cristalina
+    cristal2/                    Cristal con ciclo de vida
+    ola_01/                      Murmuración de estorninos
+    superfideos_fixed_dual_5/    Cadenas orgánicas
+  README.md                      Documentación completa del proyecto
+  .gitignore                     Exclusiones de git
+
+
+SUBIR CAMBIOS A GITHUB
+-----------------------
+Cuando modifiques un archivo en cualquiera de los proyectos, copia
+el archivo modificado a su carpeta correspondiente dentro de LAB y
+ejecuta estos comandos en PowerShell:
+
+  cd "i:\Mi unidad\trabajo rafa\Toy\Processing\LAB"
+  git add -A
+  git commit -m "descripcion del cambio"
+  git push
+
+Ejemplo real:
+  Si modificas thelab/gui.pde en el proyecto original, copia el
+  archivo a:
+    i:\Mi unidad\trabajo rafa\Toy\Processing\LAB\thelab\gui.pde
+  y luego ejecuta los comandos de arriba.
+
+
+VER EL HISTORIAL DE CAMBIOS
+-----------------------------
+  cd "i:\Mi unidad\trabajo rafa\Toy\Processing\LAB"
+  git log --oneline
+
+
+DESHACER EL ULTIMO COMMIT (si te has equivocado)
+-------------------------------------------------
+  git revert HEAD
+  git push
+
+
+VER QUE ARCHIVOS HAN CAMBIADO
+------------------------------
+  git status
+  git diff
+
+
+DESCARGAR EL REPOSITORIO EN OTRO ORDENADOR
+-------------------------------------------
+  git clone https://github.com/rafasalas/LAB.git
+
+
+NOTAS
+-----
+- No es necesario subir cambios cada vez que editas. Puedes
+  acumular varios cambios y hacer un solo commit al final del dia.
+- El archivo README.md contiene la documentacion tecnica completa
+  del sistema OSC: protocolo, mensajes, configuracion de red, etc.
+- GitHub CLI (gh) esta instalado en C:\Program Files\GitHub CLI\
+  por si necesitas operaciones avanzadas desde terminal.
