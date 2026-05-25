@@ -1,0 +1,25 @@
+# Processing
+*.class
+applet/
+application.*/
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V7
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Autosave y backups de Processing
+*autosave*
+*.bak
+*\[Conflict\]*
+* *.pde
+
+# Configuración personal del IDE
+.claude/
+*.code-workspace
