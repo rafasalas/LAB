@@ -183,6 +183,7 @@ void draw() {
   sendToAll_band(bandAir,               "/brillos");
   sendToAll_beat(beat ? 1 : 0,          "/beat");
   if (currentBpm > 0) sendToAll_band(currentBpm, "/bpm");
+  sendToAll_fft(fft_value);
   if (frameCount % 300 == 0) prunePeers();
 
   // ── GUI ────────────────────────────────────────────────────────────
@@ -487,6 +488,16 @@ void sendToAll_beat(int valor, String address) {
   } else {
     for (OscPeer p : knownPeers) {
       sendOscBeat(valor, address, new NetAddress(p.ip, 6448));
+    }
+  }
+}
+
+void sendToAll_fft(float[] vals) {
+  if (broadcastMode || knownPeers.size() == 0) {
+    sendOsc_fft(vals, dest2);
+  } else {
+    for (OscPeer p : knownPeers) {
+      sendOsc_fft(vals, new NetAddress(p.ip, 6449));
     }
   }
 }
