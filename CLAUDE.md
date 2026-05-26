@@ -2,7 +2,7 @@
 
 ## Qué es este proyecto
 
-LAB es un **monorepo** que agrupa un ecosistema completo de arte generativo audiovisual en Processing (Java). Consta de un emisor central (**TheLab**) y cinco visualizadores generativos que reciben datos de audio en tiempo real vía **OSC broadcast UDP**.
+LAB es un **monorepo** que agrupa un ecosistema completo de arte generativo audiovisual en Processing (Java). Consta de un emisor central (**TheLab**) y ocho visualizadores generativos que reciben datos de audio en tiempo real vía **OSC broadcast UDP**.
 
 El flujo de datos es siempre unidireccional: TheLab analiza audio → emite OSC → cualquier número de visualizadores escuchan y reaccionan visualmente.
 
@@ -33,7 +33,10 @@ LAB/
     ├── cristal1/                    Geoda cristalina de 5000 puntos (muelle)
     ├── cristal2/                    Cristal con ciclo de vida (mandala evanescente)
     ├── ola_01/                      Murmuración de 4000 partículas elásticas
-    └── superfideos_fixed_dual_5/    4×200 cadenas orgánicas con split de atractor
+    ├── superfideos_fixed_dual_5/    4×200 cadenas orgánicas con split de atractor
+    ├── azteca_osc/                  29 anillos concéntricos conducidos por FFT completo
+    ├── rayos_lab/                   360 rayos ramificantes, portado de openFrameworks
+    └── lastrompetas/                9 trompetas 3D con muelle FFT, portado de openFrameworks
 ```
 
 Cada visualizador tiene su propio `CLAUDE.md` con documentación técnica detallada.
@@ -85,7 +88,7 @@ Todos los sliders usan `Slidersimple.display3()` (marcador triangular). La inter
 | Rol | IP | Puerto |
 |---|---|---|
 | Emisión principal | 255.255.255.255 (broadcast) | 6448 |
-| Emisión secundaria `/intensidad` | 255.255.255.255 (broadcast) | 6449 |
+| Emisión secundaria `/fft_value` (511 floats) | 255.255.255.255 (broadcast) | 6449 |
 | Escucha | 0.0.0.0 | 12000, 12001 |
 
 ---
@@ -215,17 +218,118 @@ lateral4 — central/centralb — lateral2
 
 ---
 
+### azteca_osc
+
+**Concepto:** 29 anillos concéntricos (radios i×2 px, i=10..290) compuestos de arcos. Cada anillo responde al bin FFT de su índice: rotación proporcional a la energía, color modulado en saturación y brillo.
+
+**Archivos:** `azteca_osc.pde` (86 líneas). Sin clases auxiliares.
+
+**Fuente de datos:** Puerto 6449, mensaje `/fft_value` (511 floats, el espectro Minim completo enviado por TheLab a 60 fps). No escucha el puerto 6448.
+
+**Configuración OSC crítica:** `datagramSize = 8192` bytes — el paquete `/fft_value` pesa ~2572 bytes, superando el buffer por defecto de 1008.
+
+**Geometría por anillo:**
+- Número de arcos: `numeroCachos[i] = random(20, 50)` fijado en setup
+- Ángulo de separación: `(360 - sumaEspacios) / numeroCachos[i]`
+- Rotación: `angInicial = i×2 + value[i]` (el espectro mueve el anillo)
+- Arco renderizado con `beginShape/vertex` como polígono de 1000 lados aproximando el arco
+
+**Color HSB:** tono fijo por anillo (`map(i, 10, 290, 220, 0)` → azul→rojo), saturación y brillo modulados por `value[i]` (40–100 y 50–100 respectivamente), alpha 90–230.
+
+**Estela:** overlay `fill(0, 0, 0, 95)` cada frame → persistencia suave.
+
+**Emite:** `/hello "azteca_osc"` → broadcast:12000 cada 5 segundos (autodescubrimiento).
+
+---
+
+### rayos_lab
+
+**Concepto:** 360 rayos ramificantes (uno por grado) que emanan del centro de la pantalla. Portado del visualizador `rayos3` (openFrameworks/C++) al ecosistema LAB. Cada rayo usa el bin FFT de su ángulo para determinar su longitud, preservando la estética original de relámpago orgánico.
+
+**Archivos:** `rayos_lab.pde` (sketch principal) + `rayo.pde` (constantes + algoritmo). Pantalla completa P2D.
+
+**Fuente de datos:** Puerto 6449 (`/fft_value`, 511 floats) + puerto 6448 (`/beat`, `/bpm`, `/brillos`).
+
+**Configuración OSC crítica:** igual que `azteca_osc` — `datagramSize = 8192` en el listener del puerto 6449.
+
+**Algoritmo `rayo(cx, cy, angulo, segmentos)`:**
+- Pre-computa 3 pares cos/sin fuera del bucle: dirección recta + desviación ±45°
+- Por cada segmento: dibuja dos líneas (P1→P2 recto, P2→P3 desviado), con desviación aleatoria 33/33/34 (izquierda / recto / derecha)
+- Todo el rayo en un único `beginShape(LINES)/endShape()` — 360 draw calls/frame vs. ~90.000 en el original C++
+
+**Constantes geométricas:** `ALTO=2`, `ANCHO=2`, `HIPO=√8≈2.828 px/segmento`, `BETA=atan(1)=45°`, `CACHOS_BASE=50`, `FFT_SCALE=500`.
+
+**Respuesta OSC:**
+- `/fft_value[ang]` → `segmentos = 50 + value[ang]` y color `B = value[ang]×20` (mismo mapeo que el original C++)
+- `/beat` → `beatDecay = 1.0` (decae −0.08/frame, ~12 frames): alarga todos los rayos +80 segmentos y aumenta alpha
+- `/brillos` → alpha del overlay de estela (`map(brillos, 0,1, 12,55)`)
+- `/bpm` → suavizado con lerp (reservado para futuras extensiones)
+
+**Color:** R=0, G=141 fijo, B y A conducidos por `value[ang]×20` (base cian→azul). Conserva la paleta del original.
+
+**Emite:** `/hello "rayos_lab"` → broadcast:12000 cada 5 segundos (autodescubrimiento).
+
+---
+
+### lastrompetas
+
+**Concepto:** 9 trompetas 3D dispuestas en círculo (6 exteriores + 3 interiores), cada una formada por anillos concéntricos con física de muelle por anillo. El desplazamiento Z crece del anillo interior al exterior (gradiente). Portado del visualizador `circulosegmentadorotate2` (openFrameworks/C++). Renderer P3D; pantalla completa.
+
+**Archivos:** `lastrompetas.pde` (sketch principal: OSC, setup, draw) + `Trumpet.pde` (clase exportable).
+
+**Fuente de datos:** Puerto 6449 (`/fft_value`, 511 floats) + puerto 6448 (`/intensidad`, `/graves`, `/beat`).
+
+**Configuración OSC crítica:** igual que `azteca_osc` — `datagramSize = 8192` en el listener del puerto 6449.
+
+**Geometría — dos anillos de trompetas:**
+
+| Anillo | Nº | Radio | Inclinación | Tonos HSB |
+|---|---|---|---|---|
+| Exterior | 6 | 150×SCALE px | 45° hacia afuera | 0°/60°/120°/180°/240°/300° (cada 60°) |
+| Interior | 3 | 75×SCALE px | 20° hacia afuera | 30°/150°/270° (desfasadas 30°) |
+
+`SCALE = min(width, height) / 700.0` — geometría independiente de resolución.
+
+**Clase `Trumpet` — API:**
+- Constructor: `Trumpet(theta, circleR, tiltAngle, sR, eR, step, ancho, baseHue, scale)`
+- `update(float[] value, boolean kick)` — física de muelle; llamar antes de `display()`
+- `display(float[] value)` — renderizado QUADS (un `beginShape(QUADS)` por anillo)
+- `arcoHQ(res, ang, angInicial, ancho, radius, h, s, b, a)` — arco suavizado de alta calidad (uso offline)
+
+**Física de muelle por anillo:** `force = value[i]×kForce − kSpring×zPos[i] − kDamp×zVel[i]`
+- `kSpring=0.06`, `kDamp=0.14`, `kForce=0.05`, `zMax=180.0`, `beatKick=10.0`
+- Periodo natural ~26 frames (0.43 s), ratio de amortiguación ~0.29 (underdamped, 2-3 oscilaciones)
+
+**Gradiente Z interior→exterior:** `gradient = constrain((i − sR) / denom, 0, 1)` → anillos internos permanecen planos, externos reciben el desplazamiento completo.
+
+**Transformación de posición/inclinación:** `translate(circleR×cos(θ), circleR×sin(θ), 0)` + `rotate(tiltAngle, −sin(θ), cos(θ), 0)` — mapea el eje Z local a la dirección radial outward.
+
+**Oscilación amortiguada del conjunto (eje Z):** impulso en cada beat → oscilación amortiguada del grupo completo.
+- `K_ROT_SPRING=0.008`, `K_ROT_DAMP=0.04`, `BEAT_ROT_KICK=2.0`
+- Periodo natural ~70 frames (1.2 s), amplitud pico ~22°, decae en ~1.7 s
+
+**Color HSB:** `colorMode(HSB, 360, 100, 100, 255)`. Tono fijo por trompeta (`baseHue`); saturación, brillo y alpha modulados por `value[i]` (20–100, 20–100, 30–220 respectivamente).
+
+**Rendimiento:** `beginShape(QUADS)` batch: 4 vértices por arco, un único draw call por anillo. 9 trompetas × 9 anillos = 81 draw calls/frame (vs. ~2835 con `beginShape/endShape` por arco individual). Error de aproximación trapezoidal para arcos ≤17°: < 2 px — imperceptible.
+
+**Thread safety:** `volatile boolean beatPulse` — el hilo OSC escribe, `draw()` lee y resetea en el mismo frame.
+
+**Emite:** `/hello "lastrompetas"` → broadcast:12000 cada 300 frames (autodescubrimiento).
+
+---
+
 ## Soporte de mensajes OSC por visualizador
 
-| Mensaje | wild_diamond | cristal1 | cristal2 | ola_01 | superfideos |
-|---|:---:|:---:|:---:|:---:|:---:|
-| `/intensidad` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `/graves` | ✓ | — | — | ✓ | ✓ |
-| `/medios` | — | ✓ | ✓ | — | ✓ |
-| `/agudos` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `/brillos` | — | ✓ | ✓ | ✓ | — |
-| `/beat` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `/bpm` | ✓ | ✓ | ✓ | — | — |
+| Mensaje | wild_diamond | cristal1 | cristal2 | ola_01 | superfideos | azteca_osc | rayos_lab | lastrompetas |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `/intensidad` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ |
+| `/graves` | ✓ | — | — | ✓ | ✓ | — | — | ✓ |
+| `/medios` | — | ✓ | ✓ | — | ✓ | — | — | — |
+| `/agudos` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
+| `/brillos` | — | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| `/beat` | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| `/bpm` | ✓ | ✓ | ✓ | — | — | — | ✓ | — |
+| `/fft_value` | — | — | — | — | — | ✓ | ✓ | ✓ |
 
 ---
 
@@ -242,6 +346,6 @@ lateral4 — central/centralb — lateral2
 ## Notas de desarrollo
 
 - Todos los sliders usan `Slidersimple.display3()`. La interacción se delega desde `mousePressed/Dragged/Released` del sketch principal pasando coordenadas GUI-locales como PVector.
-- Los visualizadores escuchan en el puerto 6448 (UDP). El puerto 6449 recibe `/intensidad` como señal secundaria.
+- Los visualizadores escuchan en el puerto 6448 (UDP). El puerto 6449 es usado por TheLab para emitir `/fft_value` (511 floats, espectro Minim completo a 60 fps) hacia `azteca_osc`, `rayos_lab` y `lastrompetas`. Los listeners del puerto 6449 deben configurar `datagramSize = 8192` bytes — el paquete pesa ~2572 bytes, superando el buffer por defecto de 1008.
 - Los visualizadores pueden ejecutarse en el mismo equipo o en cualquier máquina de la red local.
 - Processing 4.x requerido. Librerías: Minim (solo TheLab), oscP5 + netP5 (todos).
