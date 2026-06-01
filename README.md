@@ -1,6 +1,6 @@
 # LAB — Sistema de visualización musical en tiempo real
 
-Sistema completo de **análisis de audio y visualización generativa** desarrollado en [Processing](https://processing.org/). Reproduce música, extrae datos del espectro de frecuencias y los transmite en tiempo real mediante **OSC (Open Sound Control)** a múltiples visualizadores que responden en vivo a la música.
+Sistema completo de **análisis de audio y visualización generativa** desarrollado en [Processing](https://processing.org/). Captura el audio del sistema en tiempo real, extrae datos del espectro de frecuencias y los transmite mediante **OSC (Open Sound Control)** a múltiples visualizadores que responden en vivo a la música.
 
 ---
 
@@ -9,8 +9,8 @@ Sistema completo de **análisis de audio y visualización generativa** desarroll
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   TheLab (emisor)                   │
-│  Reproduce MP3 → FFT → detección de beat/BPM       │
-│  Interfaz: sliders de ganancia, lista de canciones  │
+│  Captura audio del sistema → FFT → beat/BPM         │
+│  Interfaz: monitor de audio, sliders de ganancia    │
 └──────────────────────┬──────────────────────────────┘
                        │  UDP broadcast 255.255.255.255:6448
           ┌────────────┼───────────────────┐
@@ -28,29 +28,30 @@ Los visualizadores pueden ejecutarse en el **mismo ordenador o en equipos distin
 
 ## Componentes
 
-### `thelab/` — Reproductor y emisor OSC
+### `thelab/` — Captura de audio y emisor OSC
 
-Interfaz gráfica completa (1200 × 700 px) con:
+Interfaz gráfica completa (1200 × 960 px) con dos columnas:
 
-- **Reproductor MP3** con barra de progreso y lista de canciones scrollable (drag & drop, playlists .m3u)
+**Columna izquierda — Monitor de audio:**
+- Selector de dispositivo de captura (`<` / `>`)
+- VU meter con normalización AGC automática
+- 4 barras verticales de banda (GRAVES · MEDIOS · AGUDOS · BRILLOS)
+
+**Columna derecha — Análisis y controles:**
 - **Análisis FFT** en tiempo real (512 muestras, 44100 Hz → 86 Hz/banda)
 - **Detector de beat** con umbral ajustable (1.0–2.0) y cálculo de BPM (media de 8 intervalos)
 - **Sliders de ganancia** por banda (graves/medios/agudos) + ganancia global
-- **Visualizador de espectro** FFT (80 bandas, coloreado azul→rojo por frecuencia)
+- **Visualizador de espectro** FFT (80 bandas, 450 px, coloreado azul→rojo por frecuencia)
 - **Emisión OSC** por broadcast a todos los dispositivos de la red
 
 | Fichero | Contenido |
 |---|---|
 | `TheLab_osc_claude.pde` | Setup, draw, lógica OSC, eventos de ratón/teclado |
 | `gui.pde` | Layout de dos columnas, todos los componentes visuales |
-| `simple_bar.pde` | Barra de progreso de reproducción |
 | `simple_slider.pde` | Slider genérico (usado en 5 controles) |
-| `button_play.pde` | Botón play/pause con iconos SVG |
-| `button_simple.pde` | Botón genérico con icono SVG |
-| `lista_scroll.pde` | Lista de canciones con scroll y drag & drop |
-| `leem3u.pde` | Lectura y escritura de playlists .m3u |
+| `AudioCapture.java` | Helper Java para captura de audio del sistema |
 
-**Librerías:** `ddf.minim`, `oscP5`, `netP5`
+**Librerías:** `ddf.minim` (solo FFT), `oscP5`, `netP5`
 
 ---
 
@@ -146,7 +147,7 @@ Todos los mensajes viajan por **UDP broadcast 255.255.255.255:6448** a 60 fps.
 ## Requisitos
 
 - **Processing 4.x** — [processing.org](https://processing.org/)
-- **Librería Minim** — Gestor de librerías de Processing (Audio MP3, solo necesaria en TheLab)
+- **Librería Minim** — Gestor de librerías de Processing (solo necesaria en TheLab, para FFT)
 - **Librería oscP5 + netP5** — Gestor de librerías de Processing (todos los sketches)
 
 ### Instalación de librerías
@@ -155,14 +156,62 @@ Desde Processing: `Sketch → Import Library → Manage Libraries` y buscar `Min
 
 ---
 
+## Uso en macOS
+
+TheLab funciona en macOS con Processing 4.x sin modificaciones de código. Hay dos aspectos específicos de la plataforma a tener en cuenta:
+
+### Permisos de micrófono
+
+macOS (Mojave y posterior) solicita permiso de micrófono la primera vez que TheLab intenta capturar audio. Si el diálogo no aparece o se denegó, activarlo manualmente en **Preferencias del Sistema → Privacidad y seguridad → Micrófono** y marcar la entrada de Processing.
+
+### Captura de audio del sistema
+
+En Windows existe "Stereo Mix" integrado para capturar el audio que reproduce el propio ordenador. macOS no incluye esta función de forma nativa. Para capturar el audio de otras aplicaciones es necesario instalar un driver de audio virtual:
+
+**[BlackHole](https://github.com/ExistingHub/BlackHole)** (recomendado — gratuito, open source)
+
+**Instalación y configuración paso a paso:**
+
+1. Descargar e instalar **BlackHole 2ch** desde el repositorio oficial.
+2. Abrir **Audio MIDI Setup** (`/Aplicaciones/Utilidades/Audio MIDI Setup`).
+3. Pulsar el botón **`+`** (abajo a la izquierda) → **Crear dispositivo de salida múltiple**.
+4. En la lista de la derecha, activar **las dos** casillas:
+   - ✓ Tus altavoces habituales (p. ej. "Altavoces MacBook Pro" o "Auriculares externos")
+   - ✓ BlackHole 2ch
+5. Ir a **Preferencias del Sistema → Sonido → Salida** y seleccionar ese nuevo **"Dispositivo de salida múltiple"** como salida del sistema.
+6. En TheLab, seleccionar **BlackHole 2ch** como dispositivo de captura usando las flechas `<` / `>`.
+
+El audio del sistema se duplica internamente: llega a los altavoces y a BlackHole a la vez. TheLab captura la señal de BlackHole sin que se pierda el sonido.
+
+> **Importante:** el Dispositivo de salida múltiple aparece en Sonido → Salida, pero **no** en la lista de captura de TheLab. El dispositivo que hay que elegir en TheLab es **BlackHole 2ch** directamente.
+>
+> Sin este paso (usar BlackHole como salida directa sin el dispositivo múltiple), el audio deja de escucharse porque va solo a BlackHole y no a los altavoces.
+
+### Broadcast UDP en macOS
+
+macOS no propaga paquetes UDP a `255.255.255.255` (limited broadcast) hacia la interfaz de red LAN. TheLab soluciona esto automáticamente: al arrancar detecta la dirección de broadcast dirigido de la subred local (p. ej. `192.168.1.255`) y la usa en lugar de `255.255.255.255`. El resultado es que el modo BROADCAST funciona en macOS sin ningún cambio de configuración.
+
+La dirección detectada se imprime en la consola de Processing al arrancar:
+```
+Broadcast: 192.168.1.255
+```
+
+**Modo UNICAST** sigue disponible en el panel RED LOCAL para casos donde se quiera limitar el envío a máquinas concretas detectadas por `/hello`.
+
+### Cortafuegos
+
+Si los visualizadores no reciben datos OSC, comprobar **Preferencias del Sistema → Seguridad → Cortafuegos → Opciones** y añadir Processing a la lista de aplicaciones permitidas (o desactivar el cortafuegos temporalmente para pruebas).
+
+---
+
 ## Cómo usar
 
 ### 1. Lanzar TheLab
 
 1. Abrir `thelab/TheLab_osc_claude.pde` en Processing
-2. Pulsar ▶ (Run)
-3. Cargar canciones MP3 con el botón **CARGAR MP3**
-4. Ajustar ganancias por banda según el género musical
+2. Pulsar ▶ (Run) — la captura de audio arranca automáticamente
+3. Seleccionar el dispositivo de captura con las flechas `<` / `>` si es necesario
+4. Ajustar ganancias por banda según la fuente de audio
 
 ### 2. Lanzar visualizadores
 
@@ -174,6 +223,7 @@ Se pueden ejecutar **múltiples visualizadores simultáneamente**, en el mismo e
 
 | Control TheLab | Efecto |
 |---|---|
+| Flechas `<` / `>` | Seleccionan el dispositivo de captura de audio |
 | Slider GANANCIA (10–200) | Amplitud global de `/intensidad` |
 | Slider UMBRAL DE BEAT (1.0–2.0) | Sensibilidad del detector de beat |
 | Sliders GRAVES / MEDIOS / AGUDOS (0.0–1.0) | Escalan cada banda antes del envío OSC |
@@ -185,7 +235,7 @@ Se pueden ejecutar **múltiples visualizadores simultáneamente**, en el mismo e
 | Rol | Dirección | Puerto |
 |---|---|---|
 | Emisión OSC | 255.255.255.255 (broadcast) | 6448 |
-| Emisión secundaria `/intensidad` | 255.255.255.255 (broadcast) | 6449 |
+| Emisión secundaria `/intensidad` + `/fft_value` | 255.255.255.255 (broadcast) | 6449 |
 | Escucha mensajes entrantes | 0.0.0.0 | 12000, 12001 |
 
 Para uso en red local, asegurarse de que el cortafuegos permite tráfico UDP en los puertos 6448 y 6449.
@@ -198,18 +248,13 @@ Para uso en red local, asegurarse de que el cortafuegos permite tráfico UDP en 
 LAB/
 ├── README.md
 ├── .gitignore
-├── thelab/                          Reproductor y emisor OSC
+├── thelab/                          Captura de audio y emisor OSC
 │   ├── TheLab_osc_claude.pde
 │   ├── gui.pde
-│   ├── button_play.pde
-│   ├── button_simple.pde
-│   ├── simple_bar.pde
 │   ├── simple_slider.pde
-│   ├── lista_scroll.pde
-│   ├── leem3u.pde
 │   ├── AudioCapture.java
 │   ├── code/sketch.properties
-│   └── data/                        Fuentes, imágenes, SVGs, MP3 de ejemplo
+│   └── data/                        Fuentes, imágenes, SVGs
 └── visualizadores/
     ├── wild_diamond/                Enjambre de partículas
     ├── cristal1/                    Geoda cristalina

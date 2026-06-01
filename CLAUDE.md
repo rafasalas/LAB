@@ -16,18 +16,13 @@ LAB/
 ├── README.md                        Documentación para usuarios
 ├── instrucciones.txt                Guía de uso del repositorio git
 ├── .gitignore
-├── thelab/                          Reproductor y emisor OSC
+├── thelab/                          Captura de audio y emisor OSC
 │   ├── TheLab_osc_claude.pde        Sketch principal (setup, draw, OSC, eventos)
 │   ├── gui.pde                      Clase Gui: layout completo de la interfaz
-│   ├── simple_bar.pde               Clase Bar_simple: barra de progreso
 │   ├── simple_slider.pde            Clase Slidersimple: slider genérico
-│   ├── button_play.pde              Clase Buttonplay: botón play/pause SVG
-│   ├── button_simple.pde            Clase Buttonsimple: botón genérico SVG
-│   ├── lista_scroll.pde             Clase Listascroll: lista con scroll y drag&drop
-│   ├── leem3u.pde                   leem3u() y savem3u(): gestión de playlists .m3u
-│   ├── AudioCapture.java            Helper Java para captura de audio
+│   ├── AudioCapture.java            Helper Java para captura de audio del sistema
 │   ├── code/sketch.properties       Configuración del sketch Processing
-│   └── data/                        Fuentes .vlw, SVGs, PNGs, MP3 de ejemplo
+│   └── data/                        Fuentes .vlw, SVGs, PNGs
 └── visualizadores/
     ├── wild_diamond/                Enjambre de 4000 partículas con atractores
     ├── cristal1/                    Geoda cristalina de 5000 puntos (muelle)
@@ -45,7 +40,7 @@ Cada visualizador tiene su propio `CLAUDE.md` con documentación técnica detall
 
 ## TheLab — Emisor OSC
 
-**Ventana:** 1200×700 px. **Librerías:** `ddf.minim`, `oscP5`, `netP5`.
+**Ventana:** 1200×960 px. **Librerías:** `ddf.minim` (solo FFT), `oscP5`, `netP5`.
 
 ### Variables globales clave
 
@@ -56,6 +51,9 @@ Cada visualizador tiene su propio `CLAUDE.md` con documentación técnica detall
 | `gravesGain` | float | 0.0–1.0 | Multiplicador pre-OSC de `/graves`. |
 | `mediosGain` | float | 0.0–1.0 | Multiplicador pre-OSC de `/medios`. |
 | `agudosGain` | float | 0.0–1.0 | Multiplicador pre-OSC de `/agudos`. |
+| `agcRms` | float | — | RMS suavizado del nivel de entrada (lerp 0.015/frame). |
+| `agcGain` | float | 0.2–8.0 | Ganancia AGC: `AGC_TARGET / agcRms`. |
+| `capturaDispIdx` | int | — | Índice del dispositivo de captura activo. |
 | `energyHistory[]` | float[43] | — | Buffer circular de energía en graves (~0.7 s a 60 fps). |
 | `beatIntervals[]` | float[8] | — | Últimos 8 intervalos entre beats para calcular BPM. |
 | `beatFlash` | float | 0–1 | Fade-out del flash visual de beat (−0.07/frame). |
@@ -63,14 +61,14 @@ Cada visualizador tiene su propio `CLAUDE.md` con documentación técnica detall
 ### Flujo de análisis de audio
 
 ```
-AudioPlayer (Minim, bufferSize=512, 44100 Hz)
-  └─► FFT.forward()  →  86 Hz/banda
-        ├─ bandas 0–3   (~0–344 Hz)   → /graves  × gravesGain
-        ├─ bandas 4–23  (~344 Hz–2kHz)→ /medios  × mediosGain
-        ├─ bandas 24–93 (~2–8kHz)     → /agudos  × agudosGain
-        ├─ bandas 94+   (8kHz+)       → /brillos
+AudioCapture.copyBuffer() → snap[512]   (AGC: agcGain = AGC_TARGET / agcRms)
+  └─► FFT.forward(snap)  →  86 Hz/banda
+        ├─ bandas 0–3   (~0–344 Hz)   → /graves  × gravesGain × agcGain
+        ├─ bandas 4–23  (~344 Hz–2kHz)→ /medios  × mediosGain × agcGain
+        ├─ bandas 24–93 (~2–8kHz)     → /agudos  × agudosGain × agcGain
+        ├─ bandas 94+   (8kHz+)       → /brillos × agcGain
         └─ detector beat → /beat (cooldown 10 frames) → /bpm (media 8 intervalos)
-  └─► mix.level() × Factor × signo   → /intensidad
+  └─► level() × agcGain × Factor × signo → /intensidad
 ```
 
 **Signo de `/intensidad`:** se recalcula cada frame. `signo = -1` si la suma de muestras del buffer > 0, `signo = +1` si no. Produce oscilación interpretable como pseudo-forma de onda.
@@ -78,8 +76,8 @@ AudioPlayer (Minim, bufferSize=512, 44100 Hz)
 ### Interfaz gráfica
 
 Dos columnas separadas por línea vertical:
-- **Izquierda (480 px):** play/pause, tiempo, barra de progreso, lista scrollable.
-- **Derecha (660 px):** medidores GRAVES/MEDIOS/AGUDOS + BEAT + BPM, sliders de ganancia ×3, botones CARGAR/PLAYLIST/LIMPIAR/GUARDAR, slider GANANCIA, slider UMBRAL BEAT, visualizador FFT 80 bandas.
+- **Izquierda (480 px):** selector de dispositivo de captura (`<`/`>`), VU meter post-AGC, 4 barras verticales de banda (GRAVES azul · MEDIOS verde · AGUDOS naranja · BRILLOS rojo, ~780 px de alto).
+- **Derecha (660 px):** medidores GRAVES/MEDIOS/AGUDOS + BEAT + BPM, sliders de ganancia ×3, slider GANANCIA, slider UMBRAL BEAT, visualizador FFT 80 bandas (450 px), panel RED LOCAL.
 
 Todos los sliders usan `Slidersimple.display3()` (marcador triangular). La interacción se gestiona en `mousePressed/mouseDragged/mouseReleased` del sketch principal pasando un PVector en coordenadas GUI-locales.
 
