@@ -1,19 +1,12 @@
 class Gui {
 
-  Listascroll lista;
-  Bar_simple barra;
-  Buttonplay boton;
-  Buttonsimple loadmp3, loadm3u, clear, save;
   Slidersimple factorSlider;
   Slidersimple beatSlider;
   Slidersimple gravesSlider, mediosSlider, agudosSlider;
   PVector Posiciongui;
-  PVector posicionbarra;
-  PVector listaposicion;
   PImage despliega, pliega;
   PFont f_label;
   int Alto, Ancho;
-  float donde;
 
   // Columnas
   int lcX, lcW, rcX, rcW;
@@ -30,34 +23,14 @@ class Gui {
 
     f_label = createFont("SansSerif", 14, true);
 
-    boton = new Buttonplay(lcX + lcW/2, 50, 34, 34);
-
-    posicionbarra = new PVector(lcX, 100);
-    barra = new Bar_simple(posicionbarra, lcW, 8);
-
-    listaposicion = new PVector(lcX, 140);
-    lista = new Listascroll(listaposicion);
-    lista.ancho_items = lcW - 15;
-    lista.ancho_barra = 15;
-    lista.alto = 800;
-    lista.itemsvisibles = 29;
-
-    // Botones de acción en columna derecha — desplazados +42px para dar espacio a sección FUENTE
-    int bw = 75, bh = 35;
-    int bg = (rcW - 4*bw) / 5;
-    loadmp3 = new Buttonsimple(rcX + bg,          162, bh, bw, "loadmp3.svg");
-    loadm3u = new Buttonsimple(rcX + bg*2 + bw,   162, bh, bw, "loadm3u.svg");
-    clear   = new Buttonsimple(rcX + bg*3 + bw*2, 162, bh, bw, "clear.svg");
-    save    = new Buttonsimple(rcX + bg*4 + bw*3, 162, bh, bw, "save.svg");
-
     despliega = loadImage("desplegar.png");
     pliega    = loadImage("replegar.png");
 
-    // Sliders de ganancia global y umbral — desplazados +35px
-    factorSlider = new Slidersimple(new PVector(rcX + 10, 237), rcW - 20);
+    // Sliders de ganancia global y umbral de beat
+    factorSlider = new Slidersimple(new PVector(rcX + 10, 126), rcW - 20);
     factorSlider.posicion_marker = int((Factor - 10) / 190.0 * (rcW - 20));
 
-    beatSlider = new Slidersimple(new PVector(rcX + 10, 287), rcW - 20);
+    beatSlider = new Slidersimple(new PVector(rcX + 10, 171), rcW - 20);
     beatSlider.posicion_marker = int((BEAT_THRESHOLD - 1.0) * (rcW - 20));
 
     // Sliders de ganancia por banda
@@ -69,8 +42,6 @@ class Gui {
     gravesSlider.posicion_marker = sLen;
     mediosSlider.posicion_marker = sLen;
     agudosSlider.posicion_marker = sLen;
-
-    donde = 0;
   }
 
   void display() {
@@ -102,61 +73,40 @@ class Gui {
     else             { image(despliega, Ancho - 27, 6, 16, 16); }
     noTint();
 
-    // ── COLUMNA IZQUIERDA ──────────────────────────────────────────
-
-    sectionLabel("REPRODUCCIÓN", lcX, 22, lcX, lcX + lcW);
-    boton.display();
-    drawProgressArea();
-
-    sectionLabel("LISTA DE REPRODUCCIÓN", lcX, 130, lcX, lcX + lcW);
-    lista.display();
+    // ── COLUMNA IZQUIERDA: monitor de audio ───────────────────────
+    drawMonitorPanel();
 
     // ── COLUMNA DERECHA ────────────────────────────────────────────
 
     sectionLabel("ANÁLISIS DE AUDIO", rcX, 22, rcX, Ancho - 10);
     drawBandMeters();
 
-    sectionLabel("CONTROLES", rcX, 108, rcX, Ancho - 10);
-    drawSourceSection();
-    drawActionButtons();
-
-    sectionLabel("GANANCIA", rcX, 220, rcX, Ancho - 10);
+    sectionLabel("GANANCIA", rcX, 110, rcX, Ancho - 10);
     colorMode(RGB);
     noStroke();
     fill(255, 255, 255, 200);
     textFont(f_label);
     textSize(12);
     textAlign(RIGHT, BASELINE);
-    text(int(Factor), Ancho - 10, 220);
+    text(int(Factor), Ancho - 10, 110);
     factorSlider.display3();
 
-    sectionLabel("UMBRAL DE BEAT", rcX, 270, rcX, Ancho - 10);
+    sectionLabel("UMBRAL DE BEAT", rcX, 155, rcX, Ancho - 10);
     colorMode(RGB);
     noStroke();
     fill(255, 255, 255, 200);
     textFont(f_label);
     textSize(12);
     textAlign(RIGHT, BASELINE);
-    text(nf(BEAT_THRESHOLD, 1, 2), Ancho - 10, 270);
+    text(nf(BEAT_THRESHOLD, 1, 2), Ancho - 10, 155);
     beatSlider.display3();
 
-    sectionLabel("ESPECTRO DE FRECUENCIAS", rcX, 320, rcX, Ancho - 10);
+    sectionLabel("ESPECTRO DE FRECUENCIAS", rcX, 200, rcX, Ancho - 10);
     drawSpectrum();
 
     drawNetworkPanel();
 
     popMatrix();
-
-    if (estamosmoviendo && cancionatrapada > -1 && cancionatrapada < lista.Item.size()) {
-      colorMode(RGB);
-      fill(230, 230, 230, 210);
-      textFont(f_label);
-      textSize(13);
-      textAlign(LEFT, BOTTOM);
-      String cadena = lista.Item.get(cancionatrapada);
-      if (cadena.length() > 60) cadena = cadena.substring(0, 60) + "…";
-      text(cadena, mouseX, mouseY);
-    }
   }
 
   void sectionLabel(String txt, int x, int y, int lineX1, int lineX2) {
@@ -172,37 +122,85 @@ class Gui {
     text(txt, x, y);
   }
 
-  // ── Progreso: tiempo + barra (MP3) o VU meter (SISTEMA) ────────────
-  void drawProgressArea() {
+  // ── Columna izquierda: fuente de audio + VU + barras de banda ─────
+  void drawMonitorPanel() {
     colorMode(RGB);
+    rectMode(CORNER);
     textFont(f_label);
     noStroke();
 
-    if (!modoSistema) {
-      textSize(11);
-      fill(255, 255, 255, 150);
-      textAlign(LEFT, BASELINE);
-      int posSec = song.position() / 1000;
-      int totSec = song.length()   / 1000;
-      text(nf(posSec/60,1)+":"+nf(posSec%60,2)+"  /  "+nf(totSec/60,1)+":"+nf(totSec%60,2), lcX, 92);
-      barra.display(donde);
-    } else {
-      fill(255, 255, 255, 55);
-      textSize(10);
-      textAlign(LEFT, BASELINE);
-      text("ENTRADA EN VIVO", lcX, 92);
-      // VU meter: nivel post-AGC
-      float lvlNorm = constrain(audioCaptura.getLevel() * agcGain * 5, 0, 1);
-      fill(255, 255, 255, 18);
-      rect(lcX, 97, lcW, 8, 2);
-      if (lvlNorm > 0) {
-        fill(255, 255, 255, 175);
-        rect(lcX, 97, max(2, int(lvlNorm * lcW)), 8, 2);
+    sectionLabel("FUENTE DE AUDIO", lcX, 22, lcX, lcX + lcW);
+
+    // Selector de dispositivo
+    fill(255, 255, 255, 28);
+    rect(lcX, 30, lcW, 30, 3);
+
+    fill(255, 255, 255, 200);
+    textSize(13);
+    textAlign(CENTER, CENTER);
+    text("<", lcX + 14, 45);
+    text(">", lcX + lcW - 14, 45);
+
+    String devName = (capturaCount == 0) ? "— sin dispositivos —" : capturaNombres[capturaDispIdx];
+    if (devName.length() > 48) devName = devName.substring(0, 48) + "…";
+    fill(255, 255, 255, 185);
+    textSize(10);
+    textAlign(CENTER, CENTER);
+    text(devName, lcX + lcW / 2, 45);
+
+    // VU meter post-AGC
+    sectionLabel("NIVEL", lcX, 80, lcX, lcX + lcW);
+    float lvlNorm = constrain(audioCaptura.getLevel() * agcGain * 5, 0, 1);
+    fill(255, 255, 255, 18);
+    rect(lcX, 85, lcW, 10, 2);
+    if (lvlNorm > 0) {
+      fill(255, 255, 255, 175);
+      rect(lcX, 85, max(2, int(lvlNorm * lcW)), 10, 2);
+    }
+    fill(255, 255, 255, 70);
+    textSize(9);
+    textAlign(RIGHT, BASELINE);
+    text("AGC ×" + nf(agcGain, 1, 1), lcX + lcW, 108);
+
+    // Barras de banda verticales
+    sectionLabel("BANDAS", lcX, 130, lcX, lcX + lcW);
+
+    int barAreaTop = 140;
+    int barAreaBot = 920;
+    int barAreaH   = barAreaBot - barAreaTop;
+
+    float[] bVals  = { bandBass, bandMid, bandHigh, bandAir };
+    float[] bMaxs  = { 2.5,      2.5,     2.0,      1.0 };
+    String[] bLbls = { "GRAVES", "MEDIOS", "AGUDOS", "BRILLOS" };
+    float[] bHues  = { 220,      130,      30,       0 };
+
+    int gap  = 8;
+    int barW = (lcW - gap * 5) / 4;
+
+    for (int i = 0; i < 4; i++) {
+      int bx     = lcX + gap + i * (barW + gap);
+      float norm = constrain(bVals[i] / bMaxs[i], 0, 1);
+      int barH   = int(norm * barAreaH);
+
+      fill(255, 255, 255, 15);
+      rect(bx, barAreaTop, barW, barAreaH, 3);
+
+      if (barH > 0) {
+        colorMode(HSB, 360, 100, 100, 100);
+        fill(bHues[i], 70, 90, int(norm * 80 + 20));
+        colorMode(RGB);
+        rect(bx, barAreaTop + barAreaH - barH, barW, barH, 3);
       }
+
+      fill(255, 255, 255, 140);
+      textFont(f_label);
+      textSize(9);
+      textAlign(CENTER, TOP);
+      text(bLbls[i], bx + barW / 2, barAreaBot + 5);
     }
   }
 
-  // ── Barras de banda, indicador beat, sliders de ganancia ───────────
+  // ── Barras horizontales de banda + beat + sliders de ganancia ─────
   void drawBandMeters() {
     int my = 40, mh = 20;
     int segW = (rcW - 10) / 3;
@@ -253,108 +251,12 @@ class Gui {
     agudosSlider.display3();
   }
 
-  // ── Sección FUENTE: toggle MP3/SISTEMA + selector de dispositivo ───
-  void drawSourceSection() {
-    colorMode(RGB);
-    noStroke();
-    textFont(f_label);
-
-    // Botón toggle MP3 / SISTEMA
-    fill(modoSistema ? color(255, 255, 255, 220) : color(255, 255, 255, 45));
-    rect(rcX + 5, 120, 110, 30, 3);
-    fill(modoSistema ? color(0, 0, 0, 240) : color(255, 255, 255, 200));
-    textSize(11);
-    textAlign(CENTER, CENTER);
-    text(modoSistema ? "SISTEMA" : "MP3", rcX + 60, 135);
-
-    // Caja selector de dispositivo
-    float devAlpha = modoSistema ? 1.0 : 0.35;
-    int devBoxX = rcX + 123;
-    int devBoxW = rcW - 128;
-
-    fill(255, 255, 255, 28 * devAlpha);
-    rect(devBoxX, 120, devBoxW, 30, 3);
-
-    // Flecha <
-    fill(255, 255, 255, 200 * devAlpha);
-    textSize(13);
-    textAlign(CENTER, CENTER);
-    text("<", devBoxX + 13, 135);
-
-    // Nombre del dispositivo
-    String devName;
-    if (capturaCount == 0) {
-      devName = "— sin dispositivos —";
-    } else {
-      devName = capturaNombres[capturaDispIdx];
-      if (devName.length() > 34) devName = devName.substring(0, 34) + "…";
-    }
-    fill(255, 255, 255, 185 * devAlpha);
-    textSize(10);
-    textAlign(CENTER, CENTER);
-    text(devName, devBoxX + devBoxW / 2, 135);
-
-    // Flecha >
-    fill(255, 255, 255, 200 * devAlpha);
-    textSize(13);
-    textAlign(CENTER, CENTER);
-    text(">", devBoxX + devBoxW - 13, 135);
-
-    // Indicador AGC cuando está activo
-    if (modoSistema) {
-      fill(255, 255, 255, 75);
-      textSize(9);
-      textAlign(RIGHT, BASELINE);
-      text("AGC ×" + nf(agcGain, 1, 1), Ancho - 10, 155);
-    }
-  }
-
-  // ── Botones de acción (CARGAR MP3, PLAYLIST, LIMPIAR, GUARDAR) ─────
-  void drawActionButtons() {
-    loadmp3.display();
-    loadm3u.display();
-    clear.display();
-    save.display();
-
-    // Overlay de atenuado dibujado DESPUÉS de los SVGs para dimearlos
-    if (modoSistema) {
-      colorMode(RGB);
-      noStroke();
-      fill(12, 12, 12, 165);
-      rectMode(CORNER);
-      int bw = 75, bh = 35;
-      int bg = (rcW - 4*bw) / 5;
-      rect(rcX + bg,          162, bw, bh, 2);   // CARGAR MP3
-      rect(rcX + bg*2 + bw,   162, bw, bh, 2);   // PLAYLIST
-      rect(rcX + bg*4 + bw*3, 162, bw, bh, 2);   // GUARDAR
-    }
-
-    colorMode(RGB);
-    noStroke();
-    textFont(f_label);
-    textSize(10);
-    textAlign(CENTER, TOP);
-    String[] lbls = { "CARGAR MP3", "PLAYLIST", "LIMPIAR", "GUARDAR" };
-    int bw = 75;
-    int bg = (rcW - 4*bw) / 5;
-    int[] bx = {
-      rcX + bg,
-      rcX + bg*2 + bw,
-      rcX + bg*3 + bw*2,
-      rcX + bg*4 + bw*3
-    };
-    for (int i = 0; i < 4; i++) {
-      fill(255, 255, 255, (modoSistema && i != 2) ? 50 : 140);
-      text(lbls[i], bx[i] + bw/2, 202);
-    }
-  }
-
-  // ── Espectro FFT (HSB azul→rojo) ───────────────────────────────────
+  // ── Espectro FFT (HSB azul→rojo, 450 px de alto) ──────────────────
   void drawSpectrum() {
     int sx = rcX + 5;
-    int sy = 332;
+    int sy = 212;
     int sw = Ancho - rcX - 20;
-    int sh = 350;
+    int sh = 450;
     int nBands = 80;
     float barW = float(sw) / nBands;
 
@@ -399,25 +301,19 @@ class Gui {
     text("5 kHz", sx + sw - 3, sy + sh - 3);
   }
 
-  // ── Detección de toggle y selección de dispositivo ─────────────────
-  // Coordenadas GUI-locales (misma convención que Buttonplay/Buttonsimple)
-
-  boolean detectSourceToggle() {
-    float mx = mouseX - Posiciongui.x;
-    float my = mouseY - Posiciongui.y;
-    return (mx >= rcX + 5 && mx <= rcX + 115 && my >= 120 && my <= 150);
-  }
+  // ── Detección de flechas del selector de dispositivo ──────────────
+  // Coordenadas GUI-locales (columna izquierda, y=30-60)
 
   boolean detectDevicePrev() {
     float mx = mouseX - Posiciongui.x;
     float my = mouseY - Posiciongui.y;
-    return (mx >= rcX + 123 && mx <= rcX + 148 && my >= 120 && my <= 150);
+    return (mx >= lcX && mx <= lcX + 28 && my >= 30 && my <= 60);
   }
 
   boolean detectDeviceNext() {
     float mx = mouseX - Posiciongui.x;
     float my = mouseY - Posiciongui.y;
-    return (mx >= rcX + rcW - 30 && mx <= rcX + rcW - 3 && my >= 120 && my <= 150);
+    return (mx >= lcX + lcW - 28 && mx <= lcX + lcW && my >= 30 && my <= 60);
   }
 
   void detectdeslizer() {
@@ -431,35 +327,31 @@ class Gui {
   // ── Panel RED LOCAL ────────────────────────────────────────────────
 
   void drawNetworkPanel() {
-    sectionLabel("RED LOCAL", rcX, 698, rcX, Ancho - 10);
+    sectionLabel("RED LOCAL", rcX, 688, rcX, Ancho - 10);
     colorMode(RGB);
     noStroke();
     textFont(f_label);
 
-    // Botón BROADCAST
     fill(broadcastMode ? color(255, 255, 255, 220) : color(255, 255, 255, 45));
-    rect(rcX + 5, 706, 120, 28, 3);
+    rect(rcX + 5, 696, 120, 28, 3);
     fill(broadcastMode ? color(0, 0, 0, 240) : color(255, 255, 255, 200));
     textSize(11);
     textAlign(CENTER, CENTER);
-    text("BROADCAST", rcX + 65, 720);
+    text("BROADCAST", rcX + 65, 710);
 
-    // Botón UNICAST
     fill(!broadcastMode ? color(255, 255, 255, 220) : color(255, 255, 255, 45));
-    rect(rcX + 130, 706, 120, 28, 3);
+    rect(rcX + 130, 696, 120, 28, 3);
     fill(!broadcastMode ? color(0, 0, 0, 240) : color(255, 255, 255, 200));
     textAlign(CENTER, CENTER);
-    text("UNICAST", rcX + 190, 720);
+    text("UNICAST", rcX + 190, 710);
 
-    // Contador de conectados
     fill(255, 255, 255, 110);
     textSize(10);
     textAlign(RIGHT, CENTER);
-    text(knownPeers.size() + (knownPeers.size() == 1 ? " conectado" : " conectados"), Ancho - 10, 720);
+    text(knownPeers.size() + (knownPeers.size() == 1 ? " conectado" : " conectados"), Ancho - 10, 710);
 
-    // Lista de peers
-    int listY = 743;
-    int rowH  = 28;
+    int listY   = 733;
+    int rowH    = 28;
     int maxRows = min(knownPeers.size(), 6);
 
     if (knownPeers.size() == 0) {
@@ -492,7 +384,6 @@ class Gui {
       textAlign(RIGHT, CENTER);
       text(agoSec + "s", Ancho - 12, listY + i*rowH + rowH/2);
 
-      // Indicador de frescura
       fill(fresh > 0.7 ? color(160, 255, 160, 200) : color(255, 255, 255, int(100 * fresh)));
       ellipse(rcX + 172, listY + i*rowH + rowH/2, 7, 7);
     }
@@ -501,12 +392,12 @@ class Gui {
   boolean detectBroadcastToggle() {
     float mx = mouseX - Posiciongui.x;
     float my = mouseY - Posiciongui.y;
-    return (mx >= rcX + 5 && mx <= rcX + 125 && my >= 706 && my <= 734);
+    return (mx >= rcX + 5 && mx <= rcX + 125 && my >= 696 && my <= 724);
   }
 
   boolean detectUnicastToggle() {
     float mx = mouseX - Posiciongui.x;
     float my = mouseY - Posiciongui.y;
-    return (mx >= rcX + 130 && mx <= rcX + 250 && my >= 706 && my <= 734);
+    return (mx >= rcX + 130 && mx <= rcX + 250 && my >= 696 && my <= 724);
   }
 }
