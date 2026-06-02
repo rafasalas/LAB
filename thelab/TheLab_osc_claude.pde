@@ -17,7 +17,6 @@ int bufferSize = 512;
 FFT fft;
 
 // GUI
-public boolean esta_arriba = true;
 Gui gui;
 PVector posicion_gui;
 PImage sombra;
@@ -166,8 +165,6 @@ void draw() {
   if (frameCount % 300 == 0) prunePeers();
 
   // ── GUI ────────────────────────────────────────────────────────────
-  float targetY = esta_arriba ? 0 : height - 52;
-  gui.Posiciongui.y = lerp(gui.Posiciongui.y, targetY, 0.15);
   gui.display();
 }
 
@@ -244,8 +241,6 @@ void mousePressed() {
 
   if (gui.detectBroadcastToggle()) { broadcastMode = true;  return; }
   if (gui.detectUnicastToggle())   { broadcastMode = false; return; }
-
-  gui.detectdeslizer();
 
   PVector vr = new PVector(mouseX - gui.Posiciongui.x, mouseY - gui.Posiciongui.y);
   gui.factorSlider.detectPress(vr);

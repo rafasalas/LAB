@@ -4,7 +4,6 @@ class Gui {
   Slidersimple beatSlider;
   Slidersimple gravesSlider, mediosSlider, agudosSlider;
   PVector Posiciongui;
-  PImage despliega, pliega;
   PFont f_label;
   int Alto, Ancho;
 
@@ -22,9 +21,6 @@ class Gui {
     rcW = Ancho - rcX - 10;   // 1180 - 510 - 10 = 660
 
     f_label = createFont("SansSerif", 14, true);
-
-    despliega = loadImage("desplegar.png");
-    pliega    = loadImage("replegar.png");
 
     // Sliders de ganancia global y umbral de beat
     factorSlider = new Slidersimple(new PVector(rcX + 10, 126), rcW - 20);
@@ -54,24 +50,12 @@ class Gui {
     fill(255, 255, 255, 10);
     rect(0, 0, Ancho, height);
 
-    if (beatFlash > 0) {
-      fill(255, 255, 255, beatFlash * 90);
-      rect(0, 0, Ancho, 28);
-    }
-
     stroke(255, 255, 255, 65);
     strokeWeight(1);
     line(0, 0, 0, height);
     line(Ancho, 0, Ancho, height);
     line(505, 12, 505, height - 12);
     noStroke();
-
-    fill(255, 255, 255, esta_arriba ? 45 : 90);
-    rect(Ancho - 28, 5, 20, 20, 3);
-    tint(255, 190);
-    if (esta_arriba) { image(pliega,    Ancho - 27, 6, 16, 16); }
-    else             { image(despliega, Ancho - 27, 6, 16, 16); }
-    noTint();
 
     // ── COLUMNA IZQUIERDA: monitor de audio ───────────────────────
     drawMonitorPanel();
@@ -314,14 +298,6 @@ class Gui {
     float mx = mouseX - Posiciongui.x;
     float my = mouseY - Posiciongui.y;
     return (mx >= lcX + lcW - 28 && mx <= lcX + lcW && my >= 30 && my <= 60);
-  }
-
-  void detectdeslizer() {
-    PVector v = new PVector(mouseX, mouseY);
-    v.sub(gui.Posiciongui);
-    if (v.x > Ancho - 28 && v.x < Ancho - 4) {
-      if (v.y > 5 && v.y < 25) { esta_arriba = !esta_arriba; }
-    }
   }
 
   // ── Panel RED LOCAL ────────────────────────────────────────────────
