@@ -7,22 +7,21 @@ Sistema completo de **análisis de audio y visualización generativa** desarroll
 ## Arquitectura del sistema
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   TheLab (emisor)                   │
-│  Captura audio del sistema → FFT → beat/BPM         │
-│  Interfaz: monitor de audio, sliders de ganancia    │
-└──────────────────────┬──────────────────────────────┘
-                       │  UDP broadcast 255.255.255.255:6448
-          ┌────────────┼───────────────────┐
-          ▼            ▼                   ▼
-   ┌─────────────┐ ┌──────────┐ ┌──────────────────┐
-   │ wild_diamond│ │ cristal1 │ │     ola_01        │
-   │ cristal2    │ │          │ │ superfideos_..._5 │
-   └─────────────┘ └──────────┘ └──────────────────┘
-   (cualquier número de visualizadores simultáneos)
+┌─────────────────────────────────────────────────────────────┐
+│                       TheLab (emisor)                       │
+│  Captura audio del sistema → FFT → beat/BPM                 │
+│  Interfaz: monitor de audio, sliders de ganancia            │
+└──────────┬──────────────────────────────────────────────────┘
+           │  UDP broadcast 255.255.255.255:6448  (/intensidad, /graves, /medios, /agudos, /brillos, /beat, /bpm)
+           │  UDP broadcast 255.255.255.255:6449  (/fft_value — 511 floats, espectro completo)
+           │
+     ┌─────┴──────────────────────────────────────────────────┐
+     ▼           ▼          ▼           ▼          ▼    ...   ▼
+wild_diamond  cristal1   cristal2    ola_01   superfideos  anillos
+azteca_osc   rayos_lab  lastrompetas
 ```
 
-Los visualizadores pueden ejecutarse en el **mismo ordenador o en equipos distintos de la red local**. Al ser broadcast UDP, todos los que escuchen el puerto 6448 reciben los datos automáticamente.
+Los visualizadores pueden ejecutarse en el **mismo ordenador o en equipos distintos de la red local**. Al ser broadcast UDP, todos los que escuchen el puerto 6448 (o 6449) reciben los datos automáticamente.
 
 ---
 
@@ -112,17 +111,75 @@ Color HSB dinámico: el tono varía en tiempo real según la proporción agudos/
 - `/agudos` → atractores izquierdo/derecho (expansión horizontal)
 - `/beat` → impulso de expansión (decae en ~12 frames)
 
-También emite `/hello "superfideos"` cada 5 segundos al puerto 12000 para autodescubrimiento en red.
+---
+
+### `visualizadores/azteca_osc/` — Anillos concéntricos FFT
+
+29 anillos concéntricos (radios 20–580 px) compuestos por arcos. Cada anillo responde al bin FFT de su índice: rotación proporcional a la energía, color modulado en saturación y brillo.
+
+- Fuente de datos: puerto **6449**, mensaje `/fft_value` (511 floats, espectro Minim completo a 60 fps)
+- Color HSB: tono fijo por anillo (azul → rojo de interior a exterior), saturación y brillo conducidos por el espectro
+- Estela suave por overlay semitransparente cada frame
+
+> **Nota:** requiere `datagramSize = 8192` en el listener OSC — el paquete `/fft_value` pesa ~2572 bytes, superando el buffer por defecto de 1008.
+
+---
+
+### `visualizadores/rayos_lab/` — Rayos ramificantes
+
+360 rayos (uno por grado) que emanan del centro de pantalla. Cada rayo usa el bin FFT de su ángulo para determinar su longitud y brillo, con bifurcaciones aleatorias izquierda/recto/derecha por segmento.
+
+- Fuente de datos: puerto **6449** (`/fft_value`) + puerto 6448 (`/beat`, `/bpm`, `/brillos`)
+- `/beat` → alarga todos los rayos +80 segmentos durante ~12 frames
+- `/brillos` → alpha del overlay de estela (persistencia)
+- Color base: cian/azul (R=0, G=141 fijo), brillo conducido por el espectro
+
+Portado de openFrameworks/C++ (visualizador `rayos3`).
+
+---
+
+### `visualizadores/lastrompetas/` — 9 trompetas 3D
+
+9 trompetas tridimensionales dispuestas en círculo (6 exteriores + 3 interiores), formadas por anillos concéntricos con física de muelle individual por anillo. El desplazamiento Z crece del anillo interior al exterior, creando el efecto de campana que se expande con la música.
+
+- Fuente de datos: puerto **6449** (`/fft_value`) + puerto 6448 (`/intensidad`, `/graves`, `/beat`)
+- Física de muelle por anillo: `kSpring=0.06`, `kDamp=0.14` — amortiguación subcrítical (~2-3 oscilaciones)
+- En cada `/beat`: impulso + oscilación amortiguada del conjunto en eje Z (~1.2 s de periodo)
+- Color HSB: tono fijo por trompeta (6 colores × 60° + 3 desfasados), brillo y alpha conducidos por el espectro
+- Renderer P3D; pantalla completa
+
+Portado de openFrameworks/C++ (visualizador `circulosegmentadorotate2`).
+
+---
+
+### `visualizadores/anillos/` — 6 enjambres superpuestos
+
+6 enjambres independientes de 1000 partículas cada uno (6000 total) gobernados por 5 atractores. Cada enjambre tiene un umbral de inversión de flujo distinto, creando capas de respuesta a distintas amplitudes de la señal.
+
+| Enjambre | Umbral | Comportamiento |
+|---|---|---|
+| `enjambre` | 100 | Respuesta natural |
+| `enjambre_1` | 12 | Invierte flujo si `\|intensidad\| > 12` |
+| `enjambre_2` | 8 | Invierte flujo si `\|intensidad\| > 8` |
+| `enjambre_3` | 6 | Invierte flujo si `\|intensidad\| > 6` |
+| `enjambre_4` | 4 | Invierte flujo si `\|intensidad\| > 4` |
+| `enjambre_5` | — | Respuesta cuadrática `(flujo/4)²` |
+
+- Fuente de datos: puerto **6448** (`/intensidad`, `/agudos`)
+- Color dinámico: paleta cálida (naranja) → fría (azul-cian) según `/agudos`
+- Tecla `'s'` → randomiza la clase de partícula en los 6 enjambres
+
+Migrado de `alfa_21d_exp_lab`.
 
 ---
 
 ## Protocolo OSC
 
-Todos los mensajes viajan por **UDP broadcast 255.255.255.255:6448** a 60 fps.
+### Puerto 6448 — Datos de audio procesados (60 fps)
 
 | Mensaje | Tipo | Rango | Descripción |
 |---|---|---|---|
-| `/intensidad` | float | −Factor … +Factor | RMS × Factor con signo oscilante. Señal de baja frecuencia. |
+| `/intensidad` | float | −Factor … +Factor | RMS × Factor con signo oscilante |
 | `/graves` | float | 0 … ~5 | Energía 0–344 Hz × gravesGain |
 | `/medios` | float | 0 … ~3 | Energía 344 Hz–2 kHz × mediosGain |
 | `/agudos` | float | 0 … ~2 | Energía 2–8 kHz × agudosGain |
@@ -130,17 +187,26 @@ Todos los mensajes viajan por **UDP broadcast 255.255.255.255:6448** a 60 fps.
 | `/beat` | int | 0 / 1 | Onset rítmico. Cooldown de 10 frames (~167 ms) |
 | `/bpm` | float | 40–300 | Media de hasta 8 intervalos entre beats |
 
+### Puerto 6449 — Espectro completo (60 fps)
+
+| Mensaje | Tipo | Descripción |
+|---|---|---|
+| `/fft_value` | float[511] | Espectro Minim completo (~2572 bytes/paquete) |
+
+> Los listeners del puerto 6449 deben configurar `datagramSize = 8192` bytes.
+
 ### Soporte por visualizador
 
-| Mensaje | wild_diamond | cristal1 | cristal2 | ola_01 | superfideos |
-|---|:---:|:---:|:---:|:---:|:---:|
-| `/intensidad` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `/graves` | ✓ | — | — | ✓ | ✓ |
-| `/medios` | — | ✓ | ✓ | — | ✓ |
-| `/agudos` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `/brillos` | — | ✓ | ✓ | ✓ | — |
-| `/beat` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `/bpm` | ✓ | ✓ | ✓ | — | — |
+| Mensaje | wild_diamond | cristal1 | cristal2 | ola_01 | superfideos | azteca_osc | rayos_lab | lastrompetas | anillos |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `/intensidad` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| `/graves` | ✓ | — | — | ✓ | ✓ | — | — | ✓ | — |
+| `/medios` | — | ✓ | ✓ | — | ✓ | — | — | — | — |
+| `/agudos` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| `/brillos` | — | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `/beat` | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | — |
+| `/bpm` | ✓ | ✓ | ✓ | — | — | — | ✓ | — | — |
+| `/fft_value` | — | — | — | — | — | ✓ | ✓ | ✓ | — |
 
 ---
 
@@ -234,8 +300,8 @@ Se pueden ejecutar **múltiples visualizadores simultáneamente**, en el mismo e
 
 | Rol | Dirección | Puerto |
 |---|---|---|
-| Emisión OSC | 255.255.255.255 (broadcast) | 6448 |
-| Emisión secundaria `/intensidad` + `/fft_value` | 255.255.255.255 (broadcast) | 6449 |
+| Emisión OSC (datos procesados) | 255.255.255.255 (broadcast) | 6448 |
+| Emisión OSC (`/fft_value`, espectro completo) | 255.255.255.255 (broadcast) | 6449 |
 | Escucha mensajes entrantes | 0.0.0.0 | 12000, 12001 |
 
 Para uso en red local, asegurarse de que el cortafuegos permite tráfico UDP en los puertos 6448 y 6449.
@@ -248,17 +314,21 @@ Para uso en red local, asegurarse de que el cortafuegos permite tráfico UDP en 
 LAB/
 ├── README.md
 ├── .gitignore
-├── thelab/                          Captura de audio y emisor OSC
+├── thelab/                               Captura de audio y emisor OSC
 │   ├── TheLab_osc_claude.pde
 │   ├── gui.pde
 │   ├── simple_slider.pde
 │   ├── AudioCapture.java
 │   ├── code/sketch.properties
-│   └── data/                        Fuentes, imágenes, SVGs
+│   └── data/                             Fuentes, imágenes, SVGs
 └── visualizadores/
-    ├── wild_diamond/                Enjambre de partículas
-    ├── cristal1/                    Geoda cristalina
-    ├── cristal2/                    Cristal con ciclo de vida (mandala evanescente)
-    ├── ola_01/                      Murmuración de estorninos
-    └── superfideos_fixed_dual_5/    Cadenas orgánicas con split de atractor dual
+    ├── wild_diamond/                     Enjambre de 4000 partículas
+    ├── cristal1/                         Geoda cristalina (5000 puntos)
+    ├── cristal2/                         Cristal con ciclo de vida (mandala evanescente)
+    ├── ola_01/                           Murmuración de 4000 partículas elásticas
+    ├── superfideos_fixed_dual_5/         Cadenas orgánicas con split de atractor dual
+    ├── azteca_osc/                       29 anillos concéntricos conducidos por FFT
+    ├── rayos_lab/                        360 rayos ramificantes
+    ├── lastrompetas/                     9 trompetas 3D con física de muelle
+    └── anillos/                          6 enjambres superpuestos
 ```

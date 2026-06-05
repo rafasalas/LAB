@@ -31,7 +31,8 @@ LAB/
     ├── superfideos_fixed_dual_5/    4×200 cadenas orgánicas con split de atractor
     ├── azteca_osc/                  29 anillos concéntricos conducidos por FFT completo
     ├── rayos_lab/                   360 rayos ramificantes, portado de openFrameworks
-    └── lastrompetas/                9 trompetas 3D con muelle FFT, portado de openFrameworks
+    ├── lastrompetas/                9 trompetas 3D con muelle FFT, portado de openFrameworks
+    └── anillos/                     6 enjambres de 1000 partículas, migrado de alfa_21d_exp_lab
 ```
 
 Cada visualizador tiene su propio `CLAUDE.md` con documentación técnica detallada.
@@ -316,18 +317,59 @@ lateral4 — central/centralb — lateral2
 
 ---
 
+### anillos
+
+**Concepto:** 6 enjambres independientes de 1000 partículas cada uno (6000 total), gobernados por un sistema de 5 atractores (1 central + 4 cardinales). Migrado de `alfa_21d_exp_lab` (reproductor local) al ecosistema LAB. Renderer P2D; pantalla completa.
+
+**Archivos:** `anillos.pde` (sketch principal: OSC, setup, draw) + `particle.pde` + `atractor.pde` + `system_atractor.pde` + `swarm.pde`.
+
+**Fuente de datos:** Puerto 6448 (`/intensidad`).
+
+**Sistema de atractores:**
+- `central`: sentido = `−1 − flujo` (atracción siempre activa, se refuerza con la intensidad)
+- `lateral1–4` (N/E/S/O): sentido = `−0.5 × flujo` (atracción proporcional a la intensidad, simétrica)
+- Posiciones: laterales en `width/2` y `height/2` desde el centro (bordes de pantalla)
+- Vibración: `±20 px` aleatorios cada frame sobre el centro (inestabilidad visual)
+
+**Diferenciación de enjambres por `sostenido`:**
+
+| Enjambre | Umbral sustain | Comportamiento |
+|---|---|---|
+| `enjambre` | 100 | Respuesta natural, sin compresión |
+| `enjambre_1` | 12 | Invierte flujo si `|intensidad| > 12` |
+| `enjambre_2` | 8 | Invierte flujo si `|intensidad| > 8` |
+| `enjambre_3` | 6 | Invierte flujo si `|intensidad| > 6` |
+| `enjambre_4` | 4 | Invierte flujo si `|intensidad| > 4` |
+| `enjambre_5` | — | Respuesta cuadrática `(flujo/4)²`, siempre positiva |
+
+**Clases de partícula por enjambre:** `enjambre`=1 (rectángulo largo), `enjambre_1`=4 (punto grueso), `enjambre_2`=2 (cuadrado), `enjambre_3`=8 (halo color), `enjambre_4`=3 (triángulo), `enjambre_5`=7 (halo blanco, acento).
+
+**Color dinámico por `/agudos`:** `enjambre` principal permanece en naranja-fuego fijo. Los enjambres 1–5 interpolan entre paleta cálida (naranja, t=0) y fría (azul-cian, t=1) según `t = map(agudos_s, 0, 1.5, 0, 1)`. Cada partícula lerpa individualmente hacia el target (`colorLerpSpeed=0.08`). `agudos` se suaviza con `lerp(..., 0.1)` antes de calcular `t`.
+
+**Física:** masa 8–10, Browniano `(0, 0.8)` rotado según heading × 20, gravedad (0, 0.02), velocidad máx 17 px/frame, rebote en bordes.
+
+**Fondo:** `background(0)` cada frame — sin estela.
+
+**Thread safety:** `volatile float flujo` — hilo OSC escribe, `draw()` lee.
+
+**Interacción:** tecla `'s'` → randomiza clase de partícula (1–9) en los 6 enjambres simultáneamente.
+
+**Emite:** `/hello "anillos"` → broadcast:12000 cada 300 frames (autodescubrimiento).
+
+---
+
 ## Soporte de mensajes OSC por visualizador
 
-| Mensaje | wild_diamond | cristal1 | cristal2 | ola_01 | superfideos | azteca_osc | rayos_lab | lastrompetas |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `/intensidad` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ |
-| `/graves` | ✓ | — | — | ✓ | ✓ | — | — | ✓ |
-| `/medios` | — | ✓ | ✓ | — | ✓ | — | — | — |
-| `/agudos` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — |
-| `/brillos` | — | ✓ | ✓ | ✓ | — | — | ✓ | — |
-| `/beat` | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
-| `/bpm` | ✓ | ✓ | ✓ | — | — | — | ✓ | — |
-| `/fft_value` | — | — | — | — | — | ✓ | ✓ | ✓ |
+| Mensaje | wild_diamond | cristal1 | cristal2 | ola_01 | superfideos | azteca_osc | rayos_lab | lastrompetas | anillos |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `/intensidad` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+| `/graves` | ✓ | — | — | ✓ | ✓ | — | — | ✓ | — |
+| `/medios` | — | ✓ | ✓ | — | ✓ | — | — | — | — |
+| `/agudos` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| `/brillos` | — | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `/beat` | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ | — |
+| `/bpm` | ✓ | ✓ | ✓ | — | — | — | ✓ | — | — |
+| `/fft_value` | — | — | — | — | — | ✓ | ✓ | ✓ | — |
 
 ---
 
